@@ -1,6 +1,9 @@
 // Bing sağlayıcısı — DDG bot korumasına takıldığında devreye giren yedek web motoru.
-// Gerçek sonuç sayfasını döndürür; bağlantılar bing.com/ck/a yönlendirmesindedir ve
-// buradaki `u` parametresi base64 olarak hedef adresi taşır.
+//
+// Önce Bing'in resmi RSS çıktısı denenir (`&format=rss`): sunucu tarafında daha
+// sağlamdır, temiz XML döner. RSS boş/başarısız olursa sonuç sayfası HTML'i
+// ayrıştırılır; oradaki bağlantılar bing.com/ck/a yönlendirmesindedir ve `u`
+// parametresi hedef adresi base64 olarak taşır.
 import { UA, ProviderError, fetchWithTimeout, stripTags, htmlDecode, withRetry } from '../util.js';
 
 const ENDPOINT = 'https://www.bing.com/search';
@@ -21,7 +24,27 @@ export function decodeBingUrl(href = '') {
   }
 }
 
-function parse(html) {
+/** Bing RSS (`format=rss`) çıktısını ayrıştırır — en sağlam yol. */
+function parseRss(xml) {
+  const items = [];
+  for (const block of xml.split('<item>').slice(1)) {
+    const link = /<link>([\s\S]*?)<\/link>/i.exec(block);
+    if (!link) continue;
+    const url = htmlDecode(link[1]).trim();
+    if (!/^https?:\/\//i.test(url)) continue;
+    const title = /<title>([\s\S]*?)<\/title>/i.exec(block);
+    const desc = /<description>([\s\S]*?)<\/description>/i.exec(block);
+    items.push({
+      title: stripTags(title ? title[1] : ''),
+      url,
+      snippet: desc ? stripTags(desc[1]) : '',
+      displayUrl: '',
+    });
+  }
+  return items;
+}
+
+function parseHtml(html) {
   const items = [];
   for (const block of html.split('<li class="b_algo"').slice(1)) {
     const link = /<h2>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/.exec(block);
@@ -44,33 +67,45 @@ function parse(html) {
 }
 
 export async function search(query, { page = 1, lang = 'tr', limit = 10, timeout = 9000 } = {}) {
-  const params = new URLSearchParams({
+  const base = {
     q: query,
     mkt: lang === 'tr' ? 'tr-TR' : 'en-US', // bölgesel pazar: Türkçe sorguda alakasız sonuçları eler
     setlang: lang === 'tr' ? 'tr' : 'en',
     cc: lang === 'tr' ? 'TR' : 'US',
     count: String(Math.min(limit, 20)),
-    form: 'QBLH',
     ...(page > 1 ? { first: String((page - 1) * 10 + 1) } : {}),
-  });
+  };
+  const headers = {
+    'User-Agent': UA,
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': lang === 'tr' ? 'tr-TR,tr;q=0.9,en;q=0.8' : 'en-US,en;q=0.9',
+  };
 
   return withRetry(async () => {
+    // 1) Resmî RSS çıktısı (sunucu tarafında daha güvenilir, temiz XML).
+    try {
+      const rssUrl = `${ENDPOINT}?${new URLSearchParams({ ...base, format: 'rss' })}`;
+      const rssResponse = await fetchWithTimeout(rssUrl, { headers }, timeout);
+      if (rssResponse.ok) {
+        const xml = await rssResponse.text();
+        const items = parseRss(xml);
+        if (items.length) return items.slice(0, limit);
+      }
+    } catch {
+      /* HTML'e düş */
+    }
+
+    // 2) Sonuç sayfası HTML'i.
     const response = await fetchWithTimeout(
-      `${ENDPOINT}?${params}`,
-      {
-        headers: {
-          'User-Agent': UA,
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': lang === 'tr' ? 'tr-TR,tr;q=0.9,en;q=0.8' : 'en-US,en;q=0.9',
-        },
-      },
+      `${ENDPOINT}?${new URLSearchParams({ ...base, form: 'QBLH' })}`,
+      { headers },
       timeout,
     );
 
     if (!response.ok) throw new ProviderError('bing', `Bing HTTP ${response.status}`, 502);
 
     const html = await response.text();
-    const results = parse(html);
+    const results = parseHtml(html);
 
     if (results.length === 0) {
       const error = new ProviderError('bing', 'Bing bot doğrulaması istedi veya sonuç döndürmedi', 429);
