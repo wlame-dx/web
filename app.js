@@ -689,6 +689,18 @@ async function staticWikiExtract(title, lang) {
   return { title: first.title, url: wikiPageUrl(first.title, lang), extract: first.extract };
 }
 
+/** "nedir", "nasıl yapılır" gibi soru eklerini sıyırır ("kubernetes nedir" → "kubernetes"). */
+function stripQuestionSuffix(q) {
+  return String(q)
+    .trim()
+    .replace(/[?\\.!]+$/, '')
+    .replace(
+      /\s+(nedir|ne demek|ne yapar|ne işe yarar|nasıl yapılır|nasıl çalışır|nasıl kurulur|nasıl öğrenilir|kimdir|neden|nerede|neresi|kaç|ne)$/i,
+      '',
+    )
+    .trim();
+}
+
 async function staticRunSearch(q) {
   const started = performance.now();
   const lang = state.lang;
@@ -704,7 +716,30 @@ async function staticRunSearch(q) {
     errors.push({ provider: 'wikipedia', message: err.message });
   }
 
-  // Başlığı sorguyla en iyi örtüşen maddedan özet al.
+  // Türkçe Vikipedi arama zayıfsa (örn. "kubernetes nedir" → 1 sonuç, öneri: "kubernetes nehir")
+  // soru ekini sıyırıp yeniden ara ve bulunanları birleştir.
+  const cleaned = stripQuestionSuffix(q);
+  if (cleaned && cleaned !== q && wikiItems.length < 3) {
+    try {
+      const extra = await staticWikiSearch(cleaned, lang);
+      const seen = new Set(wikiItems.map((item) => item.title));
+      for (const item of extra) if (!seen.has(item.title)) wikiItems.push(item);
+    } catch { /* önemli değil */ }
+  }
+
+  // Başlığı sorgu terimiyle başlayan veya içeren maddeler öne gelsin.
+  const titleRank = (item) => {
+    const title = item.title.toLocaleLowerCase('tr');
+    let score = queryTerms.reduce((acc, term) => acc + (title.includes(term) ? 60 : 0), 0);
+    for (const term of queryTerms) {
+      if (term.length >= 6 && title.includes(term.slice(0, 5))) score += 12;
+      if (title.startsWith(term)) score += 30;
+    }
+    return score;
+  };
+  wikiItems = [...wikiItems].sort((a, b) => titleRank(b) - titleRank(a));
+
+  // Başlığı sorguyla en iyi örtüşen maddeden özet al.
   let summary = null;
   const strong = wikiItems.find((item) =>
     queryTerms.some((term) => item.title.toLocaleLowerCase('tr').includes(term)));
