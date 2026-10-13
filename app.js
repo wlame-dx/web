@@ -57,7 +57,6 @@ const state = {
   view: 'home',
   tab: 'web',
   query: '',
-  lang: 'tr',
   data: null,
   aiStream: null,
   aiQuery: null,
@@ -419,7 +418,7 @@ async function runSearch(query, { push = true } = {}) {
 
 /** Sunucu sürümü araması. */
 async function fetchSearchData(q) {
-  const params = new URLSearchParams({ q, lang: state.lang });
+  const params = new URLSearchParams({ q });
   const response = await fetch(`${state.apiBase}/api/search?${params}`);
   if (!response.ok) throw new Error(`Sunucu hatası (${response.status})`);
   return response.json();
@@ -473,7 +472,7 @@ els.input.addEventListener('input', () => {
     try {
       let items;
       if (state.backend) {
-        const response = await fetch(`${state.apiBase}/api/suggest?q=${encodeURIComponent(value)}&lang=${state.lang}`);
+        const response = await fetch(`${state.apiBase}/api/suggest?q=${encodeURIComponent(value)}`);
         const data = await response.json();
         items = data.suggestions || [];
       } else {
@@ -545,7 +544,7 @@ function startAi(query) {
   els.aiCitationsWrap.hidden = true;
   els.aiEngine.textContent = 'kaynaklar taranıyor…';
 
-  const stream = new EventSource(`${state.apiBase}/api/ai/stream?q=${encodeURIComponent(query)}&lang=${state.lang}`);
+  const stream = new EventSource(`${state.apiBase}/api/ai/stream?q=${encodeURIComponent(query)}`);
   state.aiStream = stream;
 
   stream.onmessage = (event) => {
@@ -637,6 +636,9 @@ function wikiPageUrl(title, lang) {
   return `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(String(title).trim().replace(/\s+/g, '_'))}`;
 }
 
+// Dil kısıtı yok: statik modda bu diller birlikte taranır.
+const WIKI_LANGS = ['tr', 'en'];
+
 /** JSONP ile (CORS gerektirmeden) Google autocomplete çağırır. */
 function jsonp(url, timeout = 4500) {
   return new Promise((resolve, reject) => {
@@ -659,16 +661,17 @@ async function staticSuggest(value) {
   const items = [];
   try {
     const data = await jsonp(
-      `https://suggestqueries.google.com/complete/search?client=firefox&hl=${state.lang}&q=${encodeURIComponent(value)}`,
+      `https://suggestqueries.google.com/complete/search?client=firefox&q=${encodeURIComponent(value)}`,
     );
     (data?.[1] || []).forEach((text) => items.push({ text: String(text), source: 'google' }));
   } catch { /* öneri yoksa sorun değil */ }
   return items;
 }
 
-async function staticWikiSearch(q, lang) {
+/** Tek bir dilde Wikipedia araması. */
+async function staticWikiSearchOne(q, lang) {
   const url = `${wikiApi(lang)}?action=query&list=search&srsearch=${encodeURIComponent(q)}` +
-    '&srlimit=10&format=json&origin=*';
+    '&srlimit=8&format=json&origin=*';
   const response = await fetch(url);
   if (!response.ok) throw new Error('Wikipedia yanıt vermedi');
   const data = await response.json();
@@ -676,19 +679,49 @@ async function staticWikiSearch(q, lang) {
     title: item.title,
     url: wikiPageUrl(item.title, lang),
     snippet: stripHtml(item.snippet),
+    lang,
   }));
 }
 
+/** Dil kısıtı olmadan Wikipedia araması (tr + en harmanlanır). */
+async function staticWikiSearch(q) {
+  const lists = await Promise.all(
+    WIKI_LANGS.map((lang) => staticWikiSearchOne(q, lang).catch(() => [])),
+  );
+  const seen = new Set();
+  const merged = [];
+  const maxLen = lists.reduce((max, list) => Math.max(max, list.length), 0);
+  for (let i = 0; i < maxLen && merged.length < 8; i += 1) {
+    for (const list of lists) {
+      const item = list[i];
+      if (!item) continue;
+      const key = item.title.toLocaleLowerCase('tr');
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+      if (merged.length >= 8) break;
+    }
+  }
+  return merged;
+}
+
+/** Verilen dil öncelikli, gerekirse diğer dillerde madde özeti. */
 async function staticWikiExtract(title, lang) {
-  const url = `${wikiApi(lang)}?action=query&prop=extracts&exintro&explaintext&redirects=1` +
-    `&format=json&origin=*&titles=${encodeURIComponent(title)}`;
-  const response = await fetch(url);
-  if (!response.ok) return null;
-  const data = await response.json();
-  const pages = data.query?.pages || {};
-  const first = Object.values(pages)[0];
-  if (!first?.extract) return null;
-  return { title: first.title, url: wikiPageUrl(first.title, lang), extract: first.extract };
+  const order = [...new Set([lang, ...WIKI_LANGS].filter(Boolean))];
+  for (const l of order) {
+    const url = `${wikiApi(l)}?action=query&prop=extracts&exintro&explaintext&redirects=1` +
+      `&format=json&origin=*&titles=${encodeURIComponent(title)}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) continue;
+      const data = await response.json();
+      const pages = data.query?.pages || {};
+      const first = Object.values(pages)[0];
+      if (!first?.extract) continue;
+      return { title: first.title, url: wikiPageUrl(first.title, l), extract: first.extract };
+    } catch { /* sonraki dil */ }
+  }
+  return null;
 }
 
 /** "nedir", "nasıl yapılır" gibi soru eklerini sıyırır ("kubernetes nedir" → "kubernetes"). */
@@ -705,7 +738,6 @@ function stripQuestionSuffix(q) {
 
 async function staticRunSearch(q) {
   const started = performance.now();
-  const lang = state.lang;
   const errors = [];
   const queryTerms = q.toLocaleLowerCase('tr')
     .split(/[^\p{L}\p{N}]+/u)
@@ -713,17 +745,17 @@ async function staticRunSearch(q) {
 
   let wikiItems = [];
   try {
-    wikiItems = await staticWikiSearch(q, lang);
+    wikiItems = await staticWikiSearch(q);
   } catch (err) {
     errors.push({ provider: 'wikipedia', message: err.message });
   }
 
-  // Türkçe Vikipedi arama zayıfsa (örn. "kubernetes nedir" → 1 sonuç, öneri: "kubernetes nehir")
-  // soru ekini sıyırıp yeniden ara ve bulunanları birleştir.
+  // Arama zayıfsa (örn. "kubernetes nedir") soru ekini sıyırıp yeniden ara ve
+  // bulunanları birleştir.
   const cleaned = stripQuestionSuffix(q);
   if (cleaned && cleaned !== q && wikiItems.length < 3) {
     try {
-      const extra = await staticWikiSearch(cleaned, lang);
+      const extra = await staticWikiSearch(cleaned);
       const seen = new Set(wikiItems.map((item) => item.title));
       for (const item of extra) if (!seen.has(item.title)) wikiItems.push(item);
     } catch { /* önemli değil */ }
@@ -746,7 +778,7 @@ async function staticRunSearch(q) {
   const strong = wikiItems.find((item) =>
     queryTerms.some((term) => item.title.toLocaleLowerCase('tr').includes(term)));
   for (const item of (strong ? [strong] : wikiItems)) {
-    const found = await staticWikiExtract(item.title, lang).catch(() => null);
+    const found = await staticWikiExtract(item.title, item.lang).catch(() => null);
     if (found?.extract) { summary = found; break; }
   }
 
@@ -755,13 +787,12 @@ async function staticRunSearch(q) {
     url: item.url,
     snippet: item.snippet,
     provider: 'wikipedia',
-    domain: `${lang}.wikipedia.org`,
+    domain: `${item.lang || 'tr'}.wikipedia.org`,
   }));
 
   const took = Math.round(performance.now() - started);
   return {
     query: q,
-    lang,
     page: 1,
     took,
     results,
@@ -810,11 +841,11 @@ async function staticStartAi(query) {
   setAiEngineWeb();
 
   let wikiItems = [];
-  try { wikiItems = await staticWikiSearch(query, state.lang); } catch { /* boş */ }
+  try { wikiItems = await staticWikiSearch(query); } catch { /* boş */ }
 
   const extracts = [];
   for (const item of wikiItems.slice(0, 4)) {
-    const found = await staticWikiExtract(item.title, state.lang).catch(() => null);
+    const found = await staticWikiExtract(item.title, item.lang).catch(() => null);
     if (found) extracts.push(found);
   }
 
@@ -973,7 +1004,6 @@ function applyUrl() {
   const url = new URL(location.href);
   const q = url.searchParams.get('q');
   const tab = url.searchParams.get('tab') || 'web';
-  state.lang = 'tr';
 
   if (!q) {
     goHomeSilent();

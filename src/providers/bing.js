@@ -66,19 +66,17 @@ function parseHtml(html) {
   return items;
 }
 
-export async function search(query, { page = 1, lang = 'tr', limit = 10, timeout = 9000 } = {}) {
+export async function search(query, { page = 1, limit = 10, timeout = 9000 } = {}) {
+  // Dil/pazar kısıtı yok: yalnızca sorgu ve sayfalama parametreleri gönderilir.
   const base = {
     q: query,
-    mkt: lang === 'tr' ? 'tr-TR' : 'en-US', // bölgesel pazar: Türkçe sorguda alakasız sonuçları eler
-    setlang: lang === 'tr' ? 'tr' : 'en',
-    cc: lang === 'tr' ? 'TR' : 'US',
     count: String(Math.min(limit, 20)),
     ...(page > 1 ? { first: String((page - 1) * 10 + 1) } : {}),
   };
   const headers = {
     'User-Agent': UA,
     Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': lang === 'tr' ? 'tr-TR,tr;q=0.9,en;q=0.8' : 'en-US,en;q=0.9',
+    'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8',
   };
 
   return withRetry(async () => {

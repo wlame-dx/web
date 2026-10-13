@@ -9,15 +9,13 @@ export function isConfigured() {
   return Boolean(process.env.BRAVE_API_KEY);
 }
 
-export async function search(query, { limit = 10, lang = 'tr', timeout = 8000 } = {}) {
+export async function search(query, { limit = 10, timeout = 8000 } = {}) {
   const key = process.env.BRAVE_API_KEY;
   if (!key) return [];
 
   const params = new URLSearchParams({
     q: query,
     count: String(Math.min(limit, 20)),
-    country: lang === 'tr' ? 'tr' : 'us',
-    search_lang: lang === 'tr' ? 'tr' : 'en',
     safesearch: 'moderate',
   });
 

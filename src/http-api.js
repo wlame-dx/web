@@ -43,11 +43,11 @@ export function cleanQuery(raw) {
   return String(raw || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 256);
 }
 
-export function cachedSearch(query, lang, page) {
-  const key = `${lang}:${page}:${query.toLocaleLowerCase('tr')}`;
+export function cachedSearch(query, page) {
+  const key = `${page}:${query.toLocaleLowerCase('tr')}`;
   const cached = searchCache.get(key);
   if (cached) return Promise.resolve({ ...cached, cached: true });
-  return searchAll(query, { lang, page }).then((result) => {
+  return searchAll(query, { page }).then((result) => {
     // Web sonucu üretmeyen aramaları uzun süre önbelleğe almayalım; kısa süre
     // sonra motor toparlanmış olabilir.
     if (result.results.length > 0) searchCache.set(key, result);
@@ -84,34 +84,30 @@ export async function handleApi(req, res, url) {
   if (route === '/api/search') {
     const query = cleanQuery(param(url, 'q'));
     if (!query) return sendJson(res, 400, { error: 'q parametresi gerekli' });
-    const lang = param(url, 'lang', 'tr') === 'en' ? 'en' : 'tr';
     const page = Math.max(1, Math.min(10, Number(param(url, 'page', '1')) || 1));
-    const data = await cachedSearch(query, lang, page);
+    const data = await cachedSearch(query, page);
     return sendJson(res, 200, data);
   }
 
   if (route === '/api/suggest') {
     const query = cleanQuery(param(url, 'q'));
     if (!query) return sendJson(res, 200, { suggestions: [] });
-    const lang = param(url, 'lang', 'tr') === 'en' ? 'en' : 'tr';
-    const suggestions = await suggestAll(query, { lang });
+    const suggestions = await suggestAll(query);
     return sendJson(res, 200, { query, suggestions, source: 'google+wikipedia' });
   }
 
   if (route === '/api/wiki') {
     const query = cleanQuery(param(url, 'q'));
     if (!query) return sendJson(res, 400, { error: 'q parametresi gerekli' });
-    const lang = param(url, 'lang', 'tr') === 'en' ? 'en' : 'tr';
-    const summary = await wikipedia.bestSummary(query, { lang });
-    const hits = await wikipedia.search(query, { lang, limit: 5 }).catch(() => []);
+    const summary = await wikipedia.bestSummary(query);
+    const hits = await wikipedia.search(query, { limit: 5 }).catch(() => []);
     return sendJson(res, 200, { summary, results: hits });
   }
 
   if (route === '/api/ai') {
     const query = cleanQuery(param(url, 'q'));
     if (!query) return sendJson(res, 400, { error: 'q parametresi gerekli' });
-    const lang = param(url, 'lang', 'tr') === 'en' ? 'en' : 'tr';
-    const ctx = await cachedSearch(query, lang, 1);
+    const ctx = await cachedSearch(query, 1);
     const answer = await buildAnswer(query, ctx);
     return sendJson(res, 200, {
       query,
@@ -124,7 +120,6 @@ export async function handleApi(req, res, url) {
   if (route === '/api/ai/stream') {
     const query = cleanQuery(param(url, 'q'));
     if (!query) return sendJson(res, 400, { error: 'q parametresi gerekli' });
-    const lang = param(url, 'lang', 'tr') === 'en' ? 'en' : 'tr';
 
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -139,7 +134,7 @@ export async function handleApi(req, res, url) {
     req.on('close', () => { aborted = true; });
 
     try {
-      const ctx = await cachedSearch(query, lang, 1);
+      const ctx = await cachedSearch(query, 1);
       send({
         type: 'sources',
         query,

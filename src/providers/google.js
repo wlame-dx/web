@@ -25,13 +25,13 @@ export function isConfigured() {
   return Boolean(key && cx);
 }
 
-/** Google otomatik tamamlama. google.com'a giden canlı sorgu. */
-export async function suggest(query, { hl = 'tr', timeout = 6000 } = {}) {
-  const key = `suggest:${hl}:${query.toLocaleLowerCase('tr')}`;
+/** Google otomatik tamamlama. google.com'a giden canlı sorgu (dil kısıtı yok). */
+export async function suggest(query, { timeout = 6000 } = {}) {
+  const key = `suggest:${query.toLocaleLowerCase('tr')}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
-  const url = `${SUGGEST_URL}?client=firefox&hl=${hl}&q=${encodeURIComponent(query)}`;
+  const url = `${SUGGEST_URL}?client=firefox&q=${encodeURIComponent(query)}`;
   const response = await fetchWithTimeout(
     url,
     { headers: { 'User-Agent': UA, Accept: 'application/json' } },
@@ -71,13 +71,13 @@ function parseRss(xml) {
   return items;
 }
 
-/** Google Haberler RSS. */
-export async function news(query, { hl = 'tr', gl = 'TR', ceid = 'TR:tr', limit = 8, timeout = 8000 } = {}) {
-  const key = `news:${hl}:${limit}:${query.toLocaleLowerCase('tr')}`;
+/** Google Haberler RSS. Dil kısıtı yok: yerel ayar parametreleri gönderilmez. */
+export async function news(query, { limit = 8, timeout = 8000 } = {}) {
+  const key = `news:${limit}:${query.toLocaleLowerCase('tr')}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
-  const url = `${NEWS_URL}?q=${encodeURIComponent(query)}&hl=${hl}&gl=${gl}&ceid=${ceid}`;
+  const url = `${NEWS_URL}?q=${encodeURIComponent(query)}`;
   const items = await withRetry(async () => {
     const response = await fetchWithTimeout(
       url,
@@ -93,7 +93,7 @@ export async function news(query, { hl = 'tr', gl = 'TR', ceid = 'TR:tr', limit 
 }
 
 /** Google Programmable Search (Custom Search JSON API). Anahtar yoksa boş döner. */
-export async function webSearch(query, { limit = 10, timeout = 8000, lang = 'tr' } = {}) {
+export async function webSearch(query, { limit = 10, timeout = 8000 } = {}) {
   const { key, cx } = config();
   if (!key || !cx) return [];
 
@@ -102,7 +102,6 @@ export async function webSearch(query, { limit = 10, timeout = 8000, lang = 'tr'
     cx,
     q: query,
     num: String(Math.min(limit, 10)),
-    hl: lang,
   });
   const response = await fetchWithTimeout(
     `${CSE_URL}?${params}`,

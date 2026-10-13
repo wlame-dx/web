@@ -47,6 +47,7 @@ function score(result, queryTerms) {
   if (result.provider === 'wikipedia') value += 3;
   if (result.provider === 'google') value += 2;
   if (result.provider === 'duckduckgo') value += 1;
+  if (result.provider === 'bing') value += 1;
   if (result.snippet) value += 1;
   return value;
 }
@@ -66,42 +67,33 @@ function withMeta(item, provider) {
 
 const FALLBACK_MODULES = { bing };
 
-/** Web sonuçları: DDG → (Google anahtar varsa ayrıca) → Marginalia → son çare Bing. */
-async function webResults(query, { page, lang, notices, errors }) {
+/** Web sonuçları: DDG + yedek motor (Bing) + Marginalia birlikte taranır; sıralama alakaya göre yapılır. */
+async function webResults(query, { page, notices, errors }) {
   const collected = [];
+  const push = (items, provider) => {
+    for (const item of items) collected.push({ ...item, provider });
+  };
 
-  // 1) DuckDuckGo — birincil web kaynağı (kullanıcı tercihi).
-  try {
-    const items = await duckduckgo.search(query, {
-      page,
-      region: lang === 'tr' ? 'tr-tr' : 'us-en',
-    });
-    collected.push(...items.map((item) => ({ ...item, provider: 'duckduckgo' })));
-  } catch (err) {
-    notices.push(toNotice(err));
-  }
+  const margin = FALLBACK_MODULES[FALLBACK];
 
-  // 2) Marginalia — bot koruması uygulamaz, veri merkezi IP'lerinden bile sonuç verir.
-  if (collected.length < 4) {
-    try {
-      const items = await marginalia.search(query, { page, lang, limit: 10 });
-      collected.push(...items.map((item) => ({ ...item, provider: 'marginalia' })));
-    } catch (err) {
-      notices.push({ provider: 'marginalia', tone: 'warn', message: 'Marginalia bu sorguda sonuç döndürmedi.' });
-    }
-  }
+  await Promise.all([
+    // 1) DuckDuckGo — birincil web kaynağı (dil kısıtı yok, dünya geneli).
+    duckduckgo.search(query, { page })
+      .then((items) => push(items, 'duckduckgo'))
+      .catch((err) => notices.push(toNotice(err))),
 
-  // 3) Son çare: yedek motor. Varsayılan yedek Bing — yalnızca yukarıdakilerin
-  //    hepsi boşsa devreye girer ve rozetiyle açıkça görünür.
-  const needFallback = collected.length < 4 && FALLBACK_MODULES[FALLBACK];
-  if (needFallback) {
-    try {
-      const items = await FALLBACK_MODULES[FALLBACK].search(query, { page, lang, limit: 10 });
-      collected.push(...items.map((item) => ({ ...item, provider: FALLBACK })));
-    } catch (err) {
-      errors.push({ provider: FALLBACK, message: err.message });
-    }
-  }
+    // 2) Yedek motor (varsayılan Bing) — "ne bulduysa" katmanı.
+    margin
+      ? margin.search(query, { page, limit: 10 })
+        .then((items) => push(items, FALLBACK))
+        .catch((err) => errors.push({ provider: FALLBACK, message: err.message }))
+      : Promise.resolve(),
+
+    // 3) Marginalia — bağımsız "küçük web" dizini; ek kapsam.
+    marginalia.search(query, { page, limit: 10 })
+      .then((items) => push(items, 'marginalia'))
+      .catch(() => notices.push({ provider: 'marginalia', tone: 'warn', message: 'Marginalia bu sorguda sonuç döndürmedi.' })),
+  ]);
 
   return collected;
 }
@@ -110,24 +102,25 @@ async function webResults(query, { page, lang, notices, errors }) {
  * Tüm sağlayıcılarda arama yapar.
  * @returns {Promise<object>} birleşik sonuç kümesi
  */
-export async function searchAll(query, { lang = 'tr', page = 1, includeNews = true } = {}) {
+export async function searchAll(query, { page = 1, includeNews = true } = {}) {
   const started = Date.now();
   const queryTerms = terms(query);
   const errors = [];
   const notices = [];
 
   const tasks = [
-    webResults(query, { page, lang, notices, errors }).then((items) => ({ key: 'web', items })),
+    webResults(query, { page, notices, errors }).then((items) => ({ key: 'web', items })),
 
-    brave.search(query, { limit: 10, lang })
+    brave.search(query, { limit: 10 })
       .then((items) => ({ key: 'brave', items }))
       .catch((err) => { errors.push({ provider: 'brave', message: err.message }); return { key: 'brave', items: [] }; }),
 
-    wikipedia.search(query, { lang, limit: 6 })
+    // Wikipedia: dil kısıtı yok — tr + en birleştirilir.
+    wikipedia.search(query, { limit: 6 })
       .then((items) => ({ key: 'wikipedia', items }))
-      .catch((err) => { errors.push({ provider: `wikipedia:${lang}`, message: err.message }); return { key: 'wikipedia', items: [] }; }),
+      .catch((err) => { errors.push({ provider: 'wikipedia', message: err.message }); return { key: 'wikipedia', items: [] }; }),
 
-    google.webSearch(query, { limit: 10, lang })
+    google.webSearch(query, { limit: 10 })
       .then((items) => ({ key: 'google', items }))
       .catch((err) => { errors.push({ provider: 'google', message: err.message }); return { key: 'google', items: [] }; }),
 
@@ -137,7 +130,7 @@ export async function searchAll(query, { lang = 'tr', page = 1, includeNews = tr
         .catch((err) => { errors.push({ provider: 'google-news', message: err.message }); return { key: 'news', items: [] }; })
       : Promise.resolve({ key: 'news', items: [] }),
 
-    wikipedia.bestSummary(query, { lang })
+    wikipedia.bestSummary(query)
       .then((summary) => ({ key: 'summary', items: summary }))
       .catch(() => ({ key: 'summary', items: null })),
   ];
@@ -211,22 +204,19 @@ export async function searchAll(query, { lang = 'tr', page = 1, includeNews = tr
     provider: 'google-news',
   }));
 
-  // Web motorları bu ağdan tamamen engellendiyse (veri merkezi IP'leri) web
-  // sekmesi boş kalmasın: haber maddeleri gerçek web sayfalarıdır, onlarla
-  // doldurulur ve kullanıcıya açıkça bildirilir.
-  let finalResults = results;
-  if (finalResults.length === 0 && news.length > 0) {
-    finalResults = news.slice(0, 8).map((item) => ({ ...item, provider: 'google-news' }));
+  // Web motorları bu ağdan engellendiyse sekme boş kalır — doldurma yapmayız.
+  // Yalnızca kullanıcıya durumu açıkça bildiririz.
+  const finalResults = results;
+  if (finalResults.length === 0) {
     notices.push({
       provider: 'web',
       tone: 'info',
-      message: 'Web motorları bu ağdan engellendi; sonuçlar haber kaynaklarıyla dolduruldu.',
+      message: 'Bu ağdan web motorlarına ulaşılamadı; web sonucu bulunamadı.',
     });
   }
 
   return {
     query,
-    lang,
     page,
     took: Date.now() - started,
     results: finalResults,
@@ -252,11 +242,11 @@ export async function searchAll(query, { lang = 'tr', page = 1, includeNews = tr
   };
 }
 
-/** Öneriler: Google autocomplete + Wikipedia opensearch birleşimi. */
-export async function suggestAll(query, { lang = 'tr' } = {}) {
+/** Öneriler: Google autocomplete + Wikipedia opensearch birleşimi (dil kısıtı yok). */
+export async function suggestAll(query) {
   const [googleSuggestions, wikiSuggestions] = await Promise.all([
-    google.suggest(query, { hl: lang }).catch(() => []),
-    wikipedia.suggest(query, { lang }).catch(() => []),
+    google.suggest(query).catch(() => []),
+    wikipedia.suggest(query).catch(() => []),
   ]);
   const merged = [];
   const push = (text, source) => {

@@ -119,7 +119,7 @@ async function attempt(query, { page, region, timeout }) {
             'User-Agent': UA,
             'Content-Type': 'application/x-www-form-urlencoded',
             Accept: 'text/html,application/xhtml+xml',
-            'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8',
             Referer: 'https://duckduckgo.com/',
             Origin: 'https://duckduckgo.com',
           },
@@ -158,7 +158,7 @@ async function attempt(query, { page, region, timeout }) {
  * kalıcı engelde devre kesici devreye girer ve yedek motor kullanılır.
  * @returns {Promise<Array<{title:string,url:string,snippet:string}>>}
  */
-export async function search(query, { page = 1, region = 'tr-tr', timeout = 9000 } = {}) {
+export async function search(query, { page = 1, region = 'wt-wt', timeout = 9000 } = {}) {
   if (Date.now() < breaker.openUntil) {
     const error = new ProviderError(
       'duckduckgo',

@@ -1,8 +1,12 @@
 // Wikipedia sağlayıcısı — MediaWiki Action API (anahtar gerektirmez).
-// Paralel isteklerde ara sıra 429 döndüğü için önbellek + seyreltme + yeniden deneme uygulanır.
+// Dil kısıtlaması yoktur: varsayılan olarak tr ve en birlikte aranır ve
+// birleştirilir (sorgu hangi dildeyse o dilin maddeleri doğal olarak öne çıkar).
+// Paralel isteklerde ara sıra 429 döndüğü için önbellek + seyreltme + yeniden
+// deneme uygulanır.
 import { UA, fetchWithTimeout, stripTags, TTLCache, Throttle, withRetry, ProviderError, terms } from '../util.js';
 
-const LANGS = ['tr', 'en'];
+// Kısıtlama yok: bu dillerin hepsi birlikte taranır.
+const DEFAULT_LANGS = ['tr', 'en'];
 
 // Aynı içerik çok sık isteniyor (arama + özet + öneri): önbellek şart.
 const cache = new TTLCache(500, 15 * 60 * 1000);
@@ -10,6 +14,32 @@ const throttle = new Throttle(200);
 
 function api(lang) {
   return `https://${lang}.wikipedia.org/w/api.php`;
+}
+
+/** `langs` (dizi) veya tek `lang` verilmişse onu, yoksa varsayılan dil listesini döner. */
+function langList({ lang, langs } = {}) {
+  if (Array.isArray(langs) && langs.length) return langs;
+  if (lang) return [lang];
+  return DEFAULT_LANGS;
+}
+
+/** Farklı dillerden gelen listeleri sırayla harmanlar (tr, en, tr, en …). */
+function interleave(lists, limit, keyOf) {
+  const seen = new Set();
+  const merged = [];
+  const maxLen = lists.reduce((max, list) => Math.max(max, list.length), 0);
+  for (let i = 0; i < maxLen && merged.length < limit; i += 1) {
+    for (const list of lists) {
+      const item = list[i];
+      if (item == null) continue;
+      const key = keyOf(item);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+      if (merged.length >= limit) break;
+    }
+  }
+  return merged;
 }
 
 async function getJson(url, { timeout = 8000, accept = 'application/json' } = {}) {
@@ -30,11 +60,8 @@ function resilient(task) {
   });
 }
 
-/**
- * Madde araması.
- * @returns {Promise<Array>} sonuç listesi
- */
-export async function search(query, { lang = 'tr', limit = 6, timeout = 8000 } = {}) {
+/** Tek bir dildeki Wikipedia'da madde arar. */
+async function searchOne(query, lang, limit, timeout) {
   const key = `search:${lang}:${limit}:${query.toLocaleLowerCase('tr')}`;
   const cached = cache.get(key);
   if (cached) return cached;
@@ -60,13 +87,27 @@ export async function search(query, { lang = 'tr', limit = 6, timeout = 8000 } =
       snippet: stripTags(hit.snippet || ''),
       words: hit.wordcount || 0,
       timestamp: hit.timestamp || null,
+      lang,
     }));
   }));
 
   return cache.set(key, results);
 }
 
-/** Madde özeti (kart/özet kutusu için). */
+/**
+ * Madde araması. Dil kısıtlaması yok: `langs` verilmezse tr + en birleştirilir.
+ * @returns {Promise<Array>} sonuç listesi
+ */
+export async function search(query, { lang, langs, limit = 6, timeout = 8000 } = {}) {
+  const list = langList({ lang, langs });
+  if (list.length === 1) return searchOne(query, list[0], limit, timeout);
+
+  const per = Math.max(2, Math.ceil(limit / list.length) + 2);
+  const lists = await Promise.all(list.map((l) => searchOne(query, l, per, timeout).catch(() => [])));
+  return interleave(lists, limit, (item) => item.title.toLocaleLowerCase('tr'));
+}
+
+/** Tek bir dilde madde özeti (kart/özet kutusu için). */
 export async function summary(title, { lang = 'tr', timeout = 8000 } = {}) {
   const key = `summary:${lang}:${title.toLocaleLowerCase('tr')}`;
   const cached = cache.get(key);
@@ -113,19 +154,19 @@ function stripQuestionWords(query) {
   return clean === query.trim() ? '' : clean;
 }
 
-/** Sorgu için en iyi özeti bulur (soru eki sıyrılmış doğrudan + arama sonuçları). */
-export async function bestSummary(query, { lang = 'tr', timeout = 8000 } = {}) {
+/** Bir dil için en iyi özet adayını + güven puanını döner. */
+async function bestSummaryOne(query, lang, timeout) {
   const direct = await summary(query, { lang, timeout }).catch(() => null);
-  if (direct?.extract) return direct;
+  if (direct?.extract) return { found: direct, score: 50 };
 
   // "kubernetes nedir" gibi sorgularda madde adını doğrudan dene.
   const stripped = stripQuestionWords(query);
   if (stripped && stripped !== query) {
     const tryDirect = await summary(stripped, { lang, timeout }).catch(() => null);
-    if (tryDirect?.extract) return tryDirect;
+    if (tryDirect?.extract) return { found: tryDirect, score: 45 };
   }
 
-  const hits = await search(query, { lang, limit: 5, timeout }).catch(() => []);
+  const hits = await searchOne(query, lang, 5, timeout).catch(() => []);
   if (hits.length === 0) return null;
 
   const queryTerms = terms(query);
@@ -150,11 +191,34 @@ export async function bestSummary(query, { lang = 'tr', timeout = 8000 } = {}) {
     }
   }
 
+  return best ? { found: best, score: bestScore } : null;
+}
+
+/** Dil kısıtlaması olmadan en iyi özeti bulur (diller arasında en yüksek puanı seçer). */
+export async function bestSummary(query, { lang, langs, timeout = 8000 } = {}) {
+  const list = langList({ lang, langs });
+  if (list.length === 1) {
+    const only = await bestSummaryOne(query, list[0], timeout);
+    return only?.found || null;
+  }
+
+  const candidates = await Promise.all(
+    list.map((l) => bestSummaryOne(query, l, timeout).catch(() => null)),
+  );
+  let best = null;
+  let bestScore = -Infinity;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (candidate.score > bestScore) {
+      bestScore = candidate.score;
+      best = candidate.found;
+    }
+  }
   return best;
 }
 
-/** Otomatik tamamlama / öneri. */
-export async function suggest(query, { lang = 'tr', limit = 6, timeout = 5000 } = {}) {
+/** Tek bir dilde otomatik tamamlama. */
+async function suggestOne(query, lang, limit, timeout) {
   const params = new URLSearchParams({
     action: 'opensearch',
     search: query,
@@ -172,7 +236,16 @@ export async function suggest(query, { lang = 'tr', limit = 6, timeout = 5000 } 
   }
 }
 
-export { LANGS };
+/** Öneri — dil kısıtlaması yok (tr + en birleşik). */
+export async function suggest(query, { lang, langs, limit = 6, timeout = 5000 } = {}) {
+  const list = langList({ lang, langs });
+  if (list.length === 1) return suggestOne(query, list[0], limit, timeout);
+
+  const lists = await Promise.all(list.map((l) => suggestOne(query, l, limit, timeout).catch(() => [])));
+  return interleave(lists, limit, (text) => String(text).toLocaleLowerCase('tr'));
+}
+
+export { DEFAULT_LANGS };
 
 export const meta = {
   id: 'wikipedia',
