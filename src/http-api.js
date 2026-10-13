@@ -64,7 +64,7 @@ export function apiHealth() {
     providers: [
       { id: 'duckduckgo', ready: true, circuitOpen: duckduckgo.circuitState().open },
       { id: 'bing', ready: true, fallback: true },
-      { id: 'mojeek', ready: true, fallback: true },
+      { id: 'marginalia', ready: true, fallback: true },
       { id: 'wikipedia', ready: true },
       { id: 'google', ready: true, webSearchConfigured: google.isConfigured() },
       { id: 'brave', ready: true, webSearchConfigured: brave.isConfigured() },

@@ -88,11 +88,16 @@ gizlemez, **açıkça bildirir** ve otomatik olarak yedek kaynağa geçer.
 | Sağlayıcı | Durum | Yöntem |
 |---|---|---|
 | **DuckDuckGo** | Birincil web motoru | `duckduckgo.com/html` POST + hız sınırı ve devre kesici |
-| **Bing** | Yedek web motoru | Sonuç sayfası; `ck/a` yönlendirmeleri çözülür |
-| **Mojeek** | Son çare yedek web motoru | Anahtarsız; DDG ve Bing veri merkezi IP'lerinde engellenirse denenir |
-| **Wikipedia** | Her zaman açık | MediaWiki Action + REST API |
 | **Google** | Öneri + Haberler her zaman; web için anahtar | Autocomplete, News RSS, Custom Search JSON API |
+| **Marginalia** | Son çare web motoru | Anahtarsız, bot korumasız; veri merkezi IP'lerinden sonuç verir |
+| **Bing** | En son yedek web motoru | Sonuç sayfası; `ck/a` yönlendirmeleri çözülür |
+| **Wikipedia** | Her zaman açık | MediaWiki Action + REST API |
 | **Brave** | Opsiyonel | `BRAVE_API_KEY` ile ikinci yedek |
+
+Sıralama kullanıcı tercihine göre: **DuckDuckGo → Google (anahtar varsa) → Marginalia →
+Bing (hep en son)**. Bing yalnızca hepsi boş döndüğünde devreye girer ve rozetiyle
+açıkça görünür; tüm web motorları engelliyse web sekmesi haber maddeleriyle
+doldurulup bu bir bildirimle duyurulur.
 
 - İstekler arasında en az 1,6 sn bekleyen bir kuyruk (`Throttle`).
 - 403 / 429 / 202 yanıtları "bot koruması" sayılır; artan beklemelerle yeniden denenir.

@@ -86,7 +86,7 @@ test('5) birleşik arama: DuckDuckGo + Wikipedia + Haberler', async () => {
   assert.ok(data.results.length > 0, 'Web sonucu yok');
   const first = data.results[0];
   assert.ok(first.title && first.url.startsWith('http'));
-  assert.ok(['duckduckgo', 'google', 'brave', 'bing'].includes(first.provider));
+  assert.ok(['duckduckgo', 'google', 'brave', 'bing', 'marginalia', 'google-news'].includes(first.provider));
   console.log(`   → ilk sonuç [${first.provider}]: ${first.title}`);
 });
 
@@ -99,7 +99,7 @@ test('5b) hız sınırı: art arda 3 sorgu sorunsuz dönüyor', async () => {
   console.log(`   → ${withWeb}/3 sorgu web sonucu döndürdü (${Date.now() - started} ms)`);
   payloads.forEach((p, i) => {
     const engines = Object.entries(p.sources)
-      .filter(([k, v]) => typeof v === 'number' && v > 0 && ['duckduckgo', 'bing', 'google', 'brave'].includes(k))
+      .filter(([k, v]) => typeof v === 'number' && v > 0 && ['duckduckgo', 'bing', 'google', 'brave', 'marginalia'].includes(k))
       .map(([k]) => k)
       .join('+');
     console.log(`   → ${queries[i]}: ${p.results.length} web sonucu [${engines || 'yok'}]`);

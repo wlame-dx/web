@@ -330,7 +330,7 @@ function render(data) {
     : [
         data.sources.duckduckgo ? `ddg ${data.sources.duckduckgo}` : null,
         data.sources.bing ? `bing ${data.sources.bing}` : null,
-        data.sources.mojeek ? `mojeek ${data.sources.mojeek}` : null,
+        data.sources.marginalia ? `marginalia ${data.sources.marginalia}` : null,
         data.sources.google ? `google ${data.sources.google}` : null,
         data.sources.brave ? `brave ${data.sources.brave}` : null,
         `wiki ${data.sources.wikipedia}`,

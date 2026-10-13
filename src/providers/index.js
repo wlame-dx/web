@@ -1,18 +1,18 @@
 // Sağlayıcıları birleştiren katman: paralel arama, tekilleştirme, sıralama.
 import * as duckduckgo from './duckduckgo.js';
 import * as bing from './bing.js';
-import * as mojeek from './mojeek.js';
+import * as marginalia from './marginalia.js';
 import * as wikipedia from './wikipedia.js';
 import * as google from './google.js';
 import * as brave from './brave.js';
 import { dedupeKey, faviconFor, domainOf, terms } from '../util.js';
 
-export const providers = { duckduckgo, bing, mojeek, wikipedia, google, brave };
+export const providers = { duckduckgo, bing, marginalia, wikipedia, google, brave };
 
 export const providerList = [
   duckduckgo.meta,
   bing.meta,
-  mojeek.meta,
+  marginalia.meta,
   wikipedia.meta,
   google.meta,
   brave.meta,
@@ -66,10 +66,11 @@ function withMeta(item, provider) {
 
 const FALLBACK_MODULES = { bing };
 
-/** Web sonuçları: önce DuckDuckGo, yetersizse yedek motor, o da yetersizse Mojeek. */
+/** Web sonuçları: DDG → (Google anahtar varsa ayrıca) → Marginalia → son çare Bing. */
 async function webResults(query, { page, lang, notices, errors }) {
   const collected = [];
 
+  // 1) DuckDuckGo — birincil web kaynağı (kullanıcı tercihi).
   try {
     const items = await duckduckgo.search(query, {
       page,
@@ -80,6 +81,18 @@ async function webResults(query, { page, lang, notices, errors }) {
     notices.push(toNotice(err));
   }
 
+  // 2) Marginalia — bot koruması uygulamaz, veri merkezi IP'lerinden bile sonuç verir.
+  if (collected.length < 4) {
+    try {
+      const items = await marginalia.search(query, { page, lang, limit: 10 });
+      collected.push(...items.map((item) => ({ ...item, provider: 'marginalia' })));
+    } catch (err) {
+      notices.push({ provider: 'marginalia', tone: 'warn', message: 'Marginalia bu sorguda sonuç döndürmedi.' });
+    }
+  }
+
+  // 3) Son çare: yedek motor. Varsayılan yedek Bing — yalnızca yukarıdakilerin
+  //    hepsi boşsa devreye girer ve rozetiyle açıkça görünür.
   const needFallback = collected.length < 4 && FALLBACK_MODULES[FALLBACK];
   if (needFallback) {
     try {
@@ -87,16 +100,6 @@ async function webResults(query, { page, lang, notices, errors }) {
       collected.push(...items.map((item) => ({ ...item, provider: FALLBACK })));
     } catch (err) {
       errors.push({ provider: FALLBACK, message: err.message });
-    }
-  }
-
-  // Bing yedek de boş döndüyse (veri merkezi IP'lerinde sık olur) son çare Mojeek.
-  if (collected.length < 4) {
-    try {
-      const items = await mojeek.search(query, { page, lang, limit: 10 });
-      collected.push(...items.map((item) => ({ ...item, provider: 'mojeek' })));
-    } catch (err) {
-      notices.push({ provider: 'mojeek', tone: 'warn', message: 'Mojeek bu sorguda sonuç döndürmedi.' });
     }
   }
 
@@ -142,7 +145,7 @@ export async function searchAll(query, { lang = 'tr', page = 1, includeNews = tr
   const settled = await Promise.all(tasks);
   const bucket = Object.fromEntries(settled.map((entry) => [entry.key, entry.items]));
 
-  const counts = { duckduckgo: 0, bing: 0, google: 0, brave: 0 };
+  const counts = { duckduckgo: 0, bing: 0, marginalia: 0, google: 0, brave: 0 };
   const webItems = [
     ...(bucket.google || []).map((item) => withMeta(item, 'google')),
     ...(bucket.brave || []).map((item) => withMeta(item, 'brave')),
@@ -208,12 +211,25 @@ export async function searchAll(query, { lang = 'tr', page = 1, includeNews = tr
     provider: 'google-news',
   }));
 
+  // Web motorları bu ağdan tamamen engellendiyse (veri merkezi IP'leri) web
+  // sekmesi boş kalmasın: haber maddeleri gerçek web sayfalarıdır, onlarla
+  // doldurulur ve kullanıcıya açıkça bildirilir.
+  let finalResults = results;
+  if (finalResults.length === 0 && news.length > 0) {
+    finalResults = news.slice(0, 8).map((item) => ({ ...item, provider: 'google-news' }));
+    notices.push({
+      provider: 'web',
+      tone: 'info',
+      message: 'Web motorları bu ağdan engellendi; sonuçlar haber kaynaklarıyla dolduruldu.',
+    });
+  }
+
   return {
     query,
     lang,
     page,
     took: Date.now() - started,
-    results,
+    results: finalResults,
     wikipedia: wikiResults,
     wikipediaSummary: bucket.summary || null,
     news,
@@ -223,12 +239,12 @@ export async function searchAll(query, { lang = 'tr', page = 1, includeNews = tr
     sources: {
       duckduckgo: counts.duckduckgo,
       bing: counts.bing,
-      mojeek: counts.mojeek || 0,
+      marginalia: counts.marginalia,
       brave: counts.brave,
       wikipedia: wikiResults.length,
       google: counts.google,
       googleNews: news.length,
-      webTotal: results.length,
+      webTotal: finalResults.length,
       googleCustomSearch: google.isConfigured(),
       braveSearch: brave.isConfigured(),
       fallback: FALLBACK,
