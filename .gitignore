@@ -1,0 +1,14 @@
+# bağımlılıklar ve yerel dosyalar — asla commit edilmez
+node_modules/
+.env
+.env.local
+.env.*.local
+
+# Vercel / tarayıcı önbellekleri
+.vercel/
+.vercelignore
+*.log
+
+# işletim sistemi
+.DS_Store
+Thumbs.db

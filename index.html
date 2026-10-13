@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="wlame-dx — Google, DuckDuckGo ve Wikipedia kaynaklarını birleştiren AI modlu arama motoru." />
+  <meta name="theme-color" content="#040405" />
+  <title>wlame-dx</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23101318'/%3E%3Ctext x='50%25' y='56%25' text-anchor='middle' font-family='Segoe UI,sans-serif' font-size='34' font-weight='700' fill='%23e8eaee'%3Ew%3C/text%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="./styles.css?v=3" />
+</head>
+<body class="view-home">
+  <div class="bg-layer" aria-hidden="true">
+    <div class="bg-grid"></div>
+    <div class="bg-glow glow-1"></div>
+    <div class="bg-glow glow-2"></div>
+  </div>
+
+  <header class="topbar" id="topbar">
+    <div class="bar-main">
+      <a class="brand" href="/" id="brand" aria-label="wlame-dx ana sayfa">
+        <span class="brand-mark">w</span>
+        <span class="brand-text">wlame<i>-</i>dx</span>
+      </a>
+
+      <form class="search" id="searchForm" autocomplete="off" role="search">
+        <div class="search-field">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <line x1="16.5" y1="16.5" x2="21" y2="21"></line>
+          </svg>
+          <input id="q" name="q" type="text" aria-label="Arama sorgusu"
+                 placeholder="Aramak istediğin şeyi yaz…" spellcheck="false" />
+          <button type="button" class="clear" id="clearBtn" hidden aria-label="Temizle">×</button>
+        </div>
+        <button type="submit" class="btn btn-search" id="searchBtn">Ara</button>
+        <ul class="suggestions" id="suggestions" hidden></ul>
+      </form>
+
+      <div class="top-right">
+        <button type="button" class="lang-toggle" id="langToggle" title="Arama dili">TR</button>
+      </div>
+    </div>
+
+    <p class="hero-sub" id="heroSub">Google · DuckDuckGo · Wikipedia &nbsp;—&nbsp; tek arama, AI modu dahil.</p>
+
+    <div class="source-row" id="sourceRow">
+      <span class="chip chip-ddg" id="chipDdg">DuckDuckGo</span>
+      <span class="chip chip-bing off" id="chipBing">Bing (yedek)</span>
+      <span class="chip chip-wiki">Wikipedia</span>
+      <span class="chip chip-google off" id="chipGoogle">Google</span>
+      <span class="chip chip-brave off" id="chipBrave">Brave</span>
+    </div>
+
+    <nav class="tabs" id="tabNav">
+      <button type="button" class="tab active" data-tab="web">Web</button>
+      <button type="button" class="tab" data-tab="news">Haberler</button>
+      <button type="button" class="tab" data-tab="wikipedia">Wikipedia</button>
+      <button type="button" class="tab tab-ai" data-tab="ai"><span class="spark">✦</span> AI Modu</button>
+    </nav>
+  </header>
+
+  <section class="favs" id="favs" hidden>
+    <h2 class="favs-title">Sık Kullanılanlar</h2>
+    <div class="favs-grid" id="favsGrid"></div>
+  </section>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <main class="page" id="page">
+    <div class="serp-meta" id="statsBar" hidden></div>
+
+    <div class="notices" id="notices" hidden></div>
+    <div class="errors" id="errors" hidden></div>
+
+    <section class="panel" id="panelWeb">
+      <div class="results" id="results" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" id="panelNews" hidden>
+      <div class="news-list" id="newsList"></div>
+    </section>
+
+    <section class="panel" id="panelWiki" hidden>
+      <div class="wiki-card" id="wikiCard" hidden></div>
+      <div class="wiki-list" id="wikiList"></div>
+    </section>
+
+    <section class="panel" id="panelAi" hidden>
+      <div class="ai-panel">
+        <div class="ai-head">
+          <span class="pulse" aria-hidden="true"></span>
+          <span class="ai-label">AI Modu</span>
+          <span class="ai-engine" id="aiEngine"></span>
+        </div>
+        <div class="ai-body">
+          <div class="ai-answer" id="aiAnswer"></div>
+          <ul class="ai-bullets" id="aiBullets"></ul>
+          <div class="ai-citations-wrap" id="aiCitationsWrap" hidden>
+            <h3>Kaynaklar</h3>
+            <div class="ai-citations" id="aiCitations"></div>
+          </div>
+          <div class="ai-sources" id="aiSources"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>wlame-dx</span>
+    <span class="dot">·</span>
+    <span>DuckDuckGo · Wikipedia · Google</span>
+    <span class="dot">·</span>
+    <span id="footerAi">AI motoru: yerel özütleyici</span>
+  </footer>
+
+  <script type="module" src="./app.js?v=3"></script>
+</body>
+</html>

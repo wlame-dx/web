@@ -1,0 +1,16 @@
+{
+  "name": "wlame-dx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "wlame-dx — çok kaynaklı meta arama motoru ve AI modu (Google, DuckDuckGo, Wikipedia)",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test/search.test.mjs"
+  }
+}
