@@ -1,12 +1,11 @@
-// GEÇİCİ tanı uç noktası (2. tur): DuckDuckGo'nun resmi Instant Answer API'si,
-// Google scrape denemesi ve Swisscows ayrıntısı.
+// GEÇİCİ tanı uç noktası (3. tur): Google'ın JS'siz/HTML sürümleri ve DDG IA tekrar.
 const TARGETS = [
-  ['ddg-ia-en', 'https://api.duckduckgo.com/?q=kubernetes&format=json&no_html=1&skip_disambig=1'],
-  ['ddg-ia-tr', 'https://api.duckduckgo.com/?q=yapay%20zeka&format=json&no_html=1&skip_disambig=1&kl=tr-tr'],
-  ['ddg-ia-tr2', 'https://api.duckduckgo.com/?q=derin%20%C3%B6%C4%9Frenme&format=json&no_html=1&skip_disambig=1&kl=tr-tr'],
-  ['google-scrape', 'https://www.google.com/search?q=yapay+zeka&num=10&hl=tr'],
-  ['google-scrape-en', 'https://www.google.com/search?q=kubernetes&num=10&hl=en'],
-  ['swisscows', 'https://swisscows.com/en/web?query=yapay+zeka'],
+  ['google-gbv', 'https://www.google.com/search?q=kubernetes&num=10&gbv=1'],
+  ['google-udm14', 'https://www.google.com/search?q=kubernetes&num=10&udm=14'],
+  ['google-ncr', 'https://www.google.com/search?q=kubernetes&num=10&gl=us&hl=en&pws=0&filter=0'],
+  ['google-basic', 'https://www.google.com/search?q=kubernetes&num=10&client=firefox-b-d&source=hp'],
+  ['ddg-ia-retry', 'https://api.duckduckgo.com/?q=kubernetes&format=json&no_html=1&t=wlamedx'],
+  ['bing-rss', 'https://www.bing.com/search?q=kubernetes&format=rss'],
 ];
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
@@ -17,45 +16,32 @@ async function probe([name, url]) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 12000);
     const response = await fetch(url, {
-      headers: { 'User-Agent': UA, Accept: 'application/json,text/html,*/*' },
+      headers: {
+        'User-Agent': name.includes('bing-rss') ? 'Mozilla/5.0 (compatible; wlame-dx/1.0)' : UA,
+        Accept: 'text/html,application/json,application/xml,*/*',
+        'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8',
+      },
       signal: controller.signal,
       redirect: 'follow',
     });
-    const body = await response.text();
+    const raw = await response.arrayBuffer();
+    const body = new TextDecoder('utf-8').decode(raw);
     clearTimeout(timer);
-    const out = {
-      name,
-      status: response.status,
-      finalUrl: response.url.replace(/^https?:\/\//, '').slice(0, 45),
-      len: body.length,
-      ms: Date.now() - started,
-    };
-    if (name.startsWith('ddg-ia')) {
-      try {
-        const j = JSON.parse(body);
-        out.ia = {
-          abstract: (j.AbstractText || '').slice(0, 90),
-          heading: j.Heading,
-          relatedCount: (j.RelatedTopics || []).length,
-          results: (j.Results || []).length,
-          firstRelated: j.RelatedTopics?.[0]?.FirstURL?.slice(0, 60) || null,
-        };
-      } catch { out.ia = 'json parse fail'; }
-    } else if (name.startsWith('google')) {
-      out.hints = {
-        consent: /consent|before you continue/i.test(body),
-        captcha: /captcha|unusual traffic|our systems have detected/i.test(body),
-        h3: (body.match(/<h3/gi) || []).length,
-        resultLinks: (body.match(/<a href="\/url\?q=/gi) || []).length,
-      };
+    const out = { name, status: response.status, len: raw.byteLength, ms: Date.now() - started };
+    if (name === 'ddg-ia-retry') {
+      out.bodyPreview = body.slice(0, 200);
+    } else if (name === 'bing-rss') {
+      out.items = (body.match(/<item>/g) || []).length;
+      out.title = /<title>([\s\S]*?)<\/title>/i.exec(body)?.[1]?.slice(0, 50);
     } else {
       out.hints = {
-        captcha: /captcha|robot/i.test(body),
-        li: (body.match(/<li/g) || []).length,
-        linkCount: (body.match(/<a[^>]+href="https?:\/\//gi) || []).length,
+        consent: /before you continue|consent/i.test(body),
+        captcha: /unusual traffic|captcha|detected unusual/i.test(body),
+        h3: (body.match(/<h3/gi) || []).length,
+        resultLinks: (body.match(/<a href="\/url\?q=/gi) || []).length,
+        divG: (body.match(/<div class="g"/gi) || []).length,
       };
-      const ci = body.toLowerCase().indexOf('captcha');
-      if (ci > -1) out.captchaContext = body.slice(Math.max(0, ci - 60), ci + 80).replace(/\s+/g, ' ');
+      out.bodyPreview = body.replace(/\s+/g, ' ').slice(0, 160);
     }
     return out;
   } catch (err) {
