@@ -89,6 +89,7 @@ gizlemez, **açıkça bildirir** ve otomatik olarak yedek kaynağa geçer.
 |---|---|---|
 | **DuckDuckGo** | Birincil web motoru | `duckduckgo.com/html` POST + hız sınırı ve devre kesici |
 | **Bing** | Yedek web motoru | Sonuç sayfası; `ck/a` yönlendirmeleri çözülür |
+| **Mojeek** | Son çare yedek web motoru | Anahtarsız; DDG ve Bing veri merkezi IP'lerinde engellenirse denenir |
 | **Wikipedia** | Her zaman açık | MediaWiki Action + REST API |
 | **Google** | Öneri + Haberler her zaman; web için anahtar | Autocomplete, News RSS, Custom Search JSON API |
 | **Brave** | Opsiyonel | `BRAVE_API_KEY` ile ikinci yedek |

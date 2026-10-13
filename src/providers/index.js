@@ -1,16 +1,18 @@
 // Sağlayıcıları birleştiren katman: paralel arama, tekilleştirme, sıralama.
 import * as duckduckgo from './duckduckgo.js';
 import * as bing from './bing.js';
+import * as mojeek from './mojeek.js';
 import * as wikipedia from './wikipedia.js';
 import * as google from './google.js';
 import * as brave from './brave.js';
 import { dedupeKey, faviconFor, domainOf, terms } from '../util.js';
 
-export const providers = { duckduckgo, bing, wikipedia, google, brave };
+export const providers = { duckduckgo, bing, mojeek, wikipedia, google, brave };
 
 export const providerList = [
   duckduckgo.meta,
   bing.meta,
+  mojeek.meta,
   wikipedia.meta,
   google.meta,
   brave.meta,
@@ -64,7 +66,7 @@ function withMeta(item, provider) {
 
 const FALLBACK_MODULES = { bing };
 
-/** Web sonuçları: önce DuckDuckGo, yetersizse yedek motor. */
+/** Web sonuçları: önce DuckDuckGo, yetersizse yedek motor, o da yetersizse Mojeek. */
 async function webResults(query, { page, lang, notices, errors }) {
   const collected = [];
 
@@ -85,6 +87,16 @@ async function webResults(query, { page, lang, notices, errors }) {
       collected.push(...items.map((item) => ({ ...item, provider: FALLBACK })));
     } catch (err) {
       errors.push({ provider: FALLBACK, message: err.message });
+    }
+  }
+
+  // Bing yedek de boş döndüyse (veri merkezi IP'lerinde sık olur) son çare Mojeek.
+  if (collected.length < 4) {
+    try {
+      const items = await mojeek.search(query, { page, lang, limit: 10 });
+      collected.push(...items.map((item) => ({ ...item, provider: 'mojeek' })));
+    } catch (err) {
+      notices.push({ provider: 'mojeek', tone: 'warn', message: 'Mojeek bu sorguda sonuç döndürmedi.' });
     }
   }
 
@@ -211,6 +223,7 @@ export async function searchAll(query, { lang = 'tr', page = 1, includeNews = tr
     sources: {
       duckduckgo: counts.duckduckgo,
       bing: counts.bing,
+      mojeek: counts.mojeek || 0,
       brave: counts.brave,
       wikipedia: wikiResults.length,
       google: counts.google,

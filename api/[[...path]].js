@@ -7,11 +7,6 @@
 
 import { handleApi } from '../src/http-api.js';
 
-export const config = {
-  runtime: 'nodejs20.x',
-  maxDuration: 60,
-};
-
 export default async function handler(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
 
