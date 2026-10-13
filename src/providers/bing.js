@@ -82,20 +82,7 @@ export async function search(query, { page = 1, lang = 'tr', limit = 10, timeout
   };
 
   return withRetry(async () => {
-    // 1) Resmî RSS çıktısı (sunucu tarafında daha güvenilir, temiz XML).
-    try {
-      const rssUrl = `${ENDPOINT}?${new URLSearchParams({ ...base, format: 'rss' })}`;
-      const rssResponse = await fetchWithTimeout(rssUrl, { headers }, timeout);
-      if (rssResponse.ok) {
-        const xml = await rssResponse.text();
-        const items = parseRss(xml);
-        if (items.length) return items.slice(0, limit);
-      }
-    } catch {
-      /* HTML'e düş */
-    }
-
-    // 2) Sonuç sayfası HTML'i.
+    // 1) Sonuç sayfası HTML'i (Türkçe sorgularda da sonuç veren yol).
     const response = await fetchWithTimeout(
       `${ENDPOINT}?${new URLSearchParams({ ...base, form: 'QBLH' })}`,
       { headers },
@@ -106,13 +93,25 @@ export async function search(query, { page = 1, lang = 'tr', limit = 10, timeout
 
     const html = await response.text();
     const results = parseHtml(html);
+    if (results.length) return results.slice(0, limit);
 
-    if (results.length === 0) {
-      const error = new ProviderError('bing', 'Bing bot doğrulaması istedi veya sonuç döndürmedi', 429);
-      error.code = /captcha|Verify you are human|unusual traffic/i.test(html) ? 'rate_limited' : 'unavailable';
-      throw error;
+    // 2) HTML boşsa resmî RSS çıktısını dene (`format=rss`); bazı dillerde
+    //    boş feed döner, bu yüzden yalnızca yedek olarak kullanılır.
+    try {
+      const rssUrl = `${ENDPOINT}?${new URLSearchParams({ ...base, format: 'rss' })}`;
+      const rssResponse = await fetchWithTimeout(rssUrl, { headers }, timeout);
+      if (rssResponse.ok) {
+        const xml = await rssResponse.text();
+        const items = parseRss(xml);
+        if (items.length) return items.slice(0, limit);
+      }
+    } catch {
+      /* yok say */
     }
-    return results;
+
+    const error = new ProviderError('bing', 'Bing bot doğrulaması istedi veya sonuç döndürmedi', 429);
+    error.code = /captcha|Verify you are human|unusual traffic/i.test(html) ? 'rate_limited' : 'unavailable';
+    throw error;
   }, { attempts: 2, delays: [700, 1600], shouldRetry: (err) => err.status === 504 });
 }
 

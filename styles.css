@@ -160,18 +160,6 @@ body.view-results .bg-layer {
 .btn-search:hover { filter: brightness(1.06); }
 .spark { color: #dfe4ec; margin-right: 4px; }
 
-.top-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-.lang-toggle {
-  appearance: none;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text-dim);
-  font: inherit; font-size: 12px; font-weight: 600;
-  padding: 6px 11px; border-radius: 8px; cursor: pointer;
-  letter-spacing: 0.04em;
-}
-.lang-toggle:hover { color: var(--text); border-color: #3b414b; }
-
 /* --- sekmeler --- */
 .tabs { display: flex; gap: 2px; }
 .tab {

@@ -11,7 +11,6 @@ const els = {
   suggestions: $('suggestions'),
   tabNav: $('tabNav'),
   brand: $('brand'),
-  langToggle: $('langToggle'),
   heroSub: $('heroSub'),
 
   stats: $('statsBar'),
@@ -287,8 +286,6 @@ function syncUrl() {
   else url.searchParams.delete('q');
   if (state.tab !== 'web') url.searchParams.set('tab', state.tab);
   else url.searchParams.delete('tab');
-  if (state.lang !== 'tr') url.searchParams.set('lang', state.lang);
-  else url.searchParams.delete('lang');
   history.replaceState({}, '', url);
 }
 
@@ -396,7 +393,6 @@ async function runSearch(query, { push = true } = {}) {
     const url = new URL(location.href);
     url.searchParams.set('q', q);
     if (state.tab !== 'web') url.searchParams.set('tab', state.tab);
-    if (state.lang !== 'tr') url.searchParams.set('lang', state.lang);
     history.pushState({ q }, '', url);
   }
   document.title = `${q} — wlame-dx`;
@@ -941,13 +937,6 @@ els.tabNav.addEventListener('click', (event) => {
   setTab(tab.dataset.tab);
 });
 
-els.langToggle.addEventListener('click', () => {
-  state.lang = state.lang === 'tr' ? 'en' : 'tr';
-  els.langToggle.textContent = state.lang.toUpperCase();
-  if (state.query) runSearch(state.query, { push: false });
-  else syncUrl();
-});
-
 window.addEventListener('popstate', () => applyUrl());
 
 // Yıldız → sık kullanılanlara ekle/kaldır (sonuç ana. içindeki bağlantıyı tetiklemesin)
@@ -984,8 +973,7 @@ function applyUrl() {
   const url = new URL(location.href);
   const q = url.searchParams.get('q');
   const tab = url.searchParams.get('tab') || 'web';
-  state.lang = url.searchParams.get('lang') === 'en' ? 'en' : 'tr';
-  els.langToggle.textContent = state.lang.toUpperCase();
+  state.lang = 'tr';
 
   if (!q) {
     goHomeSilent();
