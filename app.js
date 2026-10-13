@@ -348,7 +348,12 @@ function render(data) {
   // Web
   els.results.innerHTML = data.results.length
     ? data.results.map(resultTemplate).join('')
-    : emptyBlock('Sonuç bulunamadı.', 'Farklı bir ifade dene ya da diğer sekmelere bak.');
+    : emptyBlock(
+        'Web sonucu gelmedi.',
+        staticMode || !data.sources?.webTotal
+          ? 'Web motorları bu ağdan engelleniyor görünüyor; sonuçlar yukarıdaki uyarılarda açıklanıyor. Vikipedi ve haberler çalışıyor.'
+          : 'Farklı bir ifade dene ya da diğer sekmelere bak.',
+      );
 
   // Haberler
   els.newsList.innerHTML = data.news.length
